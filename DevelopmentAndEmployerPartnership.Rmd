@@ -1,0 +1,629 @@
+---
+title: "Development and Employer Partnerships"
+author: "Victoria Kincaid"
+date: "3/21/2022"
+output: html_document
+---
+
+Context: Though all donations are updated in Salesforce, individual donations are done through a tool called Classy. Some donations are grouped as part of a campaign, while others are part of grants or corporate giving programs.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(parsedate)
+library(gridExtra)
+library(knitr)
+library(DT)
+library(scales)
+library(plyr)
+
+
+EmployerProfile <- readxl::read_xlsx("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/EPO_Teradata_Employer_Profile_Creation_Report.xlsx")
+ SeekerProfile <- readxl::read_xlsx("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/EPO_Teradata_Job Seeker_Profile_Creation_Report.xlsx")
+JobBoardSales <- readxl::read_xlsx("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/EPO_Teradata_Job_Board_Sales_Report.xlsx")
+
+Feedback <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/Feedback__c.csv")
+Campaign <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/Campaign.csv")
+EmailHistoryContact <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/vr__VR_Email_History_Contact__c.csv")
+
+SF2018Activities <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_2018Activities.csv")
+SFAcct <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Account.csv")
+SFCase <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Case.csv")
+SFContact <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SF_Contact.csv")
+SFHI <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Hire_Information__c.csv")
+SFOpportunity <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Opportunity.csv")
+SFRecordType <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_RecordType.csv")
+
+```
+
+Q: Is there a geographic location within the US that most of our individual donors come from? Are there areas in the country we don't see any donors from? Do our social media posts or fundraisers calling for donations hit these areas with little to no donors? 
+
+```{r}
+#SFOpportunity
+
+
+grep("State", colnames(SFAcct)) 
+
+NarrowOp <- SFOpportunity[,c(3,8:10,12,13,24,26,31,32,38)]
+NarrowAcct <- SFAcct[,c(1,7)]
+Opp_Acct_Join <- left_join(NarrowOp, NarrowAcct, by = c("AccountId" = "Id"))
+
+#SFOpportunity$AccountId %in% SFAcct$Id
+#SFOpportunity$CampaignId %in% Campaign$Id
+
+Contact_Campaign_Join <- left_join(SFContact, Campaign, by = c("Id" = "Id"))
+NarrowedCCJ <- Contact_Campaign_Join[,c(1,4)]
+
+
+states <- aggregate(Amount~BillingState,Opp_Acct_Join,sum)
+
+Opp_Acct_Join <- filter(Opp_Acct_Join, BillingState %in% c("AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC", "PR"))
+
+# OMG I wish I learned the state abb, state name earlier
+Opp_Acct_Join$BillingState <- state.name[match(Opp_Acct_Join$BillingState, state.abb)]
+
+names(Opp_Acct_Join)[12] <- "region"
+
+Opp_Acct_Join <- Opp_Acct_Join %>% filter(Amount != 0)
+Opp_Acct_Join <- Opp_Acct_Join %>% filter(Type != "Grant")
+Opp_Acct_Join <- Opp_Acct_Join %>% filter(Type != "Services Rendered")
+
+Opp_Acct_Join %>%
+  group_by(region) %>% 
+  summarise( percent = 100 * n() / nrow(Opp_Acct_Join))
+
+
+all_states <- map_data("state")
+statedata <- merge(all_states,Opp_Acct_Join,by="region")
+TestPlot <- ggplot() + geom_polygon(data = statedata,aes(x = long, y = lat, group = group, fill = Amount),color = "grey50") + coord_map()
+
+TestPlot
+#  x_x i spent several hours unsuccessfully on a map making with tmap and ggplot2
+
+ggplot() + 
+  geom_polygon( data=all_states, aes(x=long, y=lat, group=group),
+                color="black", fill="lightblue" )
+
+# so that works, but when switching from all_states to statedata doesn't work
+
+```
+
+
+Q: Do we have an average lifespan of a monthly donor?  
+
+```{r}
+# Take opp_acct_join, narrow to recurring, then add column for days between?
+
+RecurringDonors <- Opp_Acct_Join %>% filter(Type == "Recurring")
+
+RecurringDonors <- RecurringDonors[,c(1:7)]
+
+library(plyr)
+library(dplyr)
+
+
+# df %>%
+#   arrange(category, randtime) %>%
+#   group_by(category) %>%
+#   mutate(diff = randtime - lag(randtime),
+#          diff_secs = as.numeric(diff, units = 'secs'))
+
+## TRY THIS BUT YOU GOT TO CHANGE THE DATE BECAUSE IT'S READING AS CHR, NOT DATE
+
+strptime(RecurringDonors$CloseDate, format = "%m/%d/%Y")
+
+RecurringDonors <- RecurringDonors %>% mutate(CloseDate = mdy(CloseDate))
+
+
+# 
+# TEST <- RecurringDonors %>% arrange(AccountId, CloseDate) %>%
+#   group_by(AccountId) %>%
+#   mutate(diff = CloseDate - lag(CloseDate))
+# 
+# right <- mutate(TEST, TESTC = lag(CloseDate, order_by = AccountId))
+# arrange(right, CloseDate)
+# 
+# TEST2 <- setDT(TEST)[, valPr2 := lead(CloseDate,3), by = "AccountId"]
+# 
+# TEST2 <- TEST2[,c(1,5,13,14)]
+# 
+# library(chron)
+
+EH <- RecurringDonors %>% 
+  group_by(AccountId) %>%  
+  dplyr::summarize(min(CloseDate, na.rm=TRUE), (max(CloseDate, na.rm = TRUE)))
+
+EH$VAR <- (EH$`(max(CloseDate, na.rm = TRUE))` - EH$`min(CloseDate, na.rm = TRUE)`)
+
+LIFESPAN <- EH %>% filter(VAR != 0)
+
+############### YES YES YES YES YES THIS IS IT!
+
+mean(LIFESPAN$VAR)
+
+# Time difference of 322.8889 days, the average length is just shy of one year 
+
+#
+```
+
+Q: Do our monthly donors give for a year and then lapse, or do they give over the course of a few years? 
+
+```{r}
+#
+
+MORETHANYEAR <- EH %>% filter(VAR > 365)
+MORETHANTWOYEARS <- MORETHANYEAR %>% filter(VAR > 730)
+
+# Of our 53 donors listed as "recurring", 18 of them had a variance longer than one year, and of those 18 only 2 accounts went beyond two years.
+
+distinct(RecurringDonors,AccountId)
+
+distinct(MORETHANYEAR,AccountId)
+
+distinct(MORETHANTWOYEARS,AccountId)
+
+
+#
+```
+  
+Q: Do our monthly donors who give more than one year increase their gift amount year over year?
+
+```{r}
+# Okay here we implement a variance only this time instead of date we also do it on donation
+
+GIFTAMOUNT <- RecurringDonors %>% 
+  group_by(AccountId) %>%  
+  dplyr::summarize(min(CloseDate, na.rm=TRUE), max(CloseDate, na.rm = TRUE), min(Amount, na.rm = TRUE), max(Amount, na.rm = TRUE))
+
+strptime(GIFTAMOUNT$`min(CloseDate, na.rm = TRUE)`, format = "%Y-%m-%d")
+GIFTAMOUNT <- GIFTAMOUNT %>% mutate(`min(CloseDate, na.rm = TRUE)` = ymd(`min(CloseDate, na.rm = TRUE)`))
+
+strptime(GIFTAMOUNT$`max(CloseDate, na.rm = TRUE)`, format = "%Y-%m-%d")
+GIFTAMOUNT <- GIFTAMOUNT %>% mutate(`max(CloseDate, na.rm = TRUE)` = ymd(`max(CloseDate, na.rm = TRUE)`))
+
+GIFTAMOUNT$DATEVAR <- (GIFTAMOUNT$`max(CloseDate, na.rm = TRUE)` - GIFTAMOUNT$`min(CloseDate, na.rm = TRUE)`)
+GIFTAMOUNT$AMTVAR <- (GIFTAMOUNT$`max(Amount, na.rm = TRUE)` - GIFTAMOUNT$`min(Amount, na.rm = TRUE)`)
+
+MTYGA <- GIFTAMOUNT %>% filter(DATEVAR > 365) #morethanyeargiftamount
+
+MTYGA %>% filter(AMTVAR > 0)
+
+# From our 18 who are recurring donors, only 6 made an increasing gift amount than their initial donation.
+```
+
+Q: What frequency do we see unsolicited (non-event or fundraiser) donors month to month?  
+
+```{r}
+#
+NarrowOp <- SFOpportunity[,c(3,8:10,12,13,20,24,26,31,32,38)]
+NarrowAcct <- SFAcct[,c(1,7)]
+Opp_Acct_Join <- left_join(NarrowOp, NarrowAcct, by = c("AccountId" = "Id"))
+Unsolicited <- Opp_Acct_Join %>% filter(CampaignId == "000000000000000AAA")
+# looking at campaign 000000000000000AAA doesn't apply to an active campaign
+Unsolicited <- Unsolicited %>% filter(Type == "")
+# that eliminates grants
+
+strptime(Unsolicited$CloseDate, format = "%m/%d/%Y")
+
+Unsolicited <- Unsolicited %>% mutate(CloseDate = mdy(CloseDate))
+
+TESTUn <- Unsolicited %>% 
+  group_by(AccountId) %>%  
+  dplyr::summarize(min(CloseDate, na.rm=TRUE), (max(CloseDate, na.rm = TRUE)))
+TESTUn$DATEVAR <- (TESTUn$`(max(CloseDate, na.rm = TRUE))` - TESTUn$`min(CloseDate, na.rm = TRUE)`)
+
+MORETHANONCE <- TESTUn %>% filter(DATEVAR != 0)
+
+MTOMONTH <- MORETHANONCE %>% filter(DATEVAR > 10 & DATEVAR < 44)
+
+distinct(MORETHANONCE, AccountId)
+#198 donors that make unsolicited donations more than once
+
+distinct(MTOMONTH, AccountId)
+# Only 13 showing that make unsolicited donations monthly
+# that means...6.5% do monthly donations
+
+ggplot(MORETHANONCE, aes(DATEVAR)) +
+  geom_histogram()
+
+ggplot(MTOMONTH, aes(DATEVAR)) +
+  geom_histogram()
+
+
+# Donations that are more than once are 198
+
+
+#UnsolicitedTEST <- TESTUn %>% group_by(AccountId,`min(CloseDate, na.rm = TRUE)`, `(max(CloseDate, na.rm = TRUE))`) %>%
+#  summarise(DATEVAR = n()) %>% mutate(freq = DATEVAR / sum(DATEVAR))
+
+
+#actually maye lag would be right here
+
+# TESTMAYBE <- Unsolicited %>% arrange(AccountId, CloseDate) %>%
+#    group_by(AccountId) %>%
+#    mutate(diff = CloseDate - lag(CloseDate))
+# 
+# TESTMAYBE <- TESTMAYBE %>% filter(!is.na(diff))
+# 
+# # none of these are recurring so looking good
+# 
+# UnsolicitedTEST <- TESTMAYBE %>% group_by(AccountId) %>%
+#   summarise(diff = n()) %>% mutate(freq = diff / sum(diff))  # Hmmm that does give frequency but it doesn't answer month to month perhaps
+# 
+# TESTMAYBEMONTH <- TESTMAYBE %>% filter(diff > 27 && diff < 35)
+
+# https://moderndive.com/7-sampling.html  maybe do sampling? for frequency?
+
+#
+
+
+ 
+
+```
+
+Q: Do these donors give more than once a year? 
+
+```{r}
+
+#I am assuming this is in regards to all donors and not just the unsolicited ones
+
+UnsolicitedYear <- Unsolicited[,c(1,5,8,10,11,12)]
+
+UnsolicitedYear <- UnsolicitedYear %>% mutate(CloseDate = ymd(CloseDate))
+
+MTOYEAR <- MORETHANONCE %>% filter(DATEVAR < 365)
+
+#Wait, no that's actually not answering the question. Didn't I answer this in the previously question? Yes I did!
+
+# There are 1062 donors (TestUn), but there are 198 who have donated more than once. That means 18.64% donate more than once. 
+# Now we just need to see if they donate more than once a year...lag function?
+
+
+TEST1 <- UnsolicitedYear %>% arrange(AccountId, CloseDate) %>%
+  group_by(AccountId) %>%
+  dplyr::summarize(Count = n())
+
+# I want to append the count to the MTOYEAR, maybe a cbind?
+
+
+YearCount <- left_join(TEST1, MORETHANONCE, by = c("AccountId" = "AccountId"))
+
+#YearCount <- YearCount[,c(1,2,7:10)]
+
+YearCount <- YearCount %>% filter(DATEVAR != "NA")
+
+# Okay, so that gets me both for Count and DateVar, now how to filter it to show more than once a year
+
+
+
+nrow(distinct(YearCount, AccountId))
+
+YearCount$DONATIONFREQUENCY <- ifelse(YearCount$DATEVAR < 365 & YearCount$Count < 1 | YearCount$DATEVAR >= 365 & YearCount$DATEVAR < 730 & YearCount$Count < 2 | YearCount$DATEVAR >= 730 & YearCount$DATEVAR < 1095 & YearCount$Count < 3 | YearCount$DATEVAR >= 1095 & YearCount$DATEVAR < 1460 & YearCount$Count < 4 | YearCount$DATEVAR >= 1460 & YearCount$DATEVAR < 1825 & YearCount$Count < 5 | YearCount$DATEVAR >= 1825 & YearCount$DATEVAR < 2190 & YearCount$Count < 6 | YearCount$DATEVAR >= 2190 & YearCount$DATEVAR < 2555 & YearCount$Count < 7 | YearCount$DATEVAR >= 2555 & YearCount$DATEVAR < 2920 & YearCount$Count < 8 | YearCount$DATEVAR >= 2920 & YearCount$DATEVAR < 3285 & YearCount$Count < 9 | YearCount$DATEVAR >= 3285 & YearCount$DATEVAR < 3650 & YearCount$Count < 10 | YearCount$DATEVAR >= 3650 & YearCount$DATEVAR < 4015 & YearCount$Count < 11 | YearCount$DATEVAR >= 4015 & YearCount$DATEVAR < 4380 & YearCount$Count < 12, "0", "1")
+
+# OKAY! Now we have created a donation frequency filter, 1 they donate more than once in a year, 0 if they haven't let's filter out 0
+
+YearCount <- YearCount %>% filter(DONATIONFREQUENCY != 0)
+
+
+nrow(distinct(MORETHANONCE,AccountId))
+#198
+nrow(distinct(YearCount, AccountId))
+#176
+
+#So! Of our 198 donors who have made than more than one donation, 176 of them have donated more than once a year. Or 89% of them!
+
+
+```
+
+Q: What is the average gift of an unsolicited individual donor?
+
+```{r}
+#
+TESTAVERAGE <- Unsolicited %>% filter(Type == "")
+
+TESTAVERAGE <- TESTAVERAGE %>% filter(!is.na(Amount))
+
+AVGGIFT <- distinct(TESTAVERAGE,Amount)
+
+mean(AVGGIFT$Amount)
+
+GIFT <- AVGGIFT %>% filter(Amount < 100000)
+
+mean(GIFT$Amount)
+
+# The average gift of an unsolicited individual donor is $23,311.42, which is offset by several outliers, if we remove any unsolicited
+# donation above the threshold of 100,000 then the average gift of an unsolicited individual donor is $4,123.22
+  
+
+ggplot(TESTAVERAGE, aes(x= CampaignId, y= Amount)) + geom_point() 
+
+Outliers <- TESTAVERAGE %>% filter(Amount > 100000)
+
+#
+```
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Context: Email campaigns are completed by using a software tool called Vertical Response. The data from this is included (as VREmailHistory), and anything identified as Top Jobs or Virtual Career Fair in Targeted Email Subject should be helpful here.
+
+Q:  Do email campaigns have any effect on job seekers creating profiles on the Hire Heroes USA Job Board? 
+
+```{r}
+grep("Name", colnames(Email_Contact_Join)) 
+Email_Contact_Join$vr
+
+
+NarrowContact <- SFContact[,c(1, 13)]
+
+Email_Contact_Join <- left_join(NarrowContact, EmailHistoryContact, by = c("Id" = "vr__Contact__c"))
+
+summary(as.factor(EmailHistoryContact$Name))
+
+
+## didn't seem to work, also need to take out na's in Name column
+#NarrowECJ <- NarrowECJ %>% filter(!is.na(Name))
+
+
+## Actually. I think  I am making this more complicated than it needs to be. Psycho Killer Qu'est-ce que c'est?
+# Rereading the question, there is no connection to be made on the seeker profile file, if the Name in that field
+# was an ID that matched with EmailHistoryContact we'd be gravy, but alas. That leads me to believe that everything
+# I need is already only in EmailHistoryContact. So I think I just need to focus 
+
+
+# Scratch that,  I need to look at the *dates* in seeker profile for when they're created, and the dates for when the emails are sent
+
+TopJobs <-  dplyr::filter(EmailHistoryContact, grepl("Top",Name))
+#From 288499 to 715
+VCF <- dplyr::filter(EmailHistoryContact, grepl("Virtual",Name))
+# 18626
+
+TopJobs <- TopJobs[,c(4,5,12,20)]
+VCF <- VCF[,c(4,5,12,20)]
+
+# Clean the dates
+strptime(TopJobs$CreatedDate, format = "%m/%d/%Y")
+TopJobs <- TopJobs %>% mutate(CreatedDate = mdy_hm(CreatedDate))
+strptime(VCF$CreatedDate, format = "%m/%d/%Y")
+VCF <- VCF %>% mutate(CreatedDate = mdy_hm(CreatedDate))
+
+TopJobs <- TopJobs %>% 
+  group_by(Name) %>%
+  mutate(perc = vr__Clicked__c / sum(vr__Clicked__c)) %>% 
+  as.data.frame()
+
+TopJobs %>%
+  group_by(Name) %>%
+  dplyr::summarise(Freq = sum(vr__Clicked__c))
+
+VCF %>%
+  group_by(Name) %>%
+  summarise(Freq = sum(vr__Clicked__c))
+# wow okay zero clicks? hmmm
+
+summary(as.factor(VCF$CreatedDate))
+#3/2/2010, 3/20/2017, 4/13/2017, 6/5/2017, 9/21/2017, 2/16/2018, 3/9/2018, 4/2/2018
+summary(as.factor(TopJobs$CreatedDate))
+# 6/1/2018, 8/10/2018
+
+NarrowSeekerProfile <- SeekerProfile[,c(4)]
+strptime(NarrowSeekerProfile$created_at, format = "%Y-%m-%d")
+NarrowSeekerProfile <- NarrowSeekerProfile %>% mutate(created_at = ymd_hms(created_at))
+
+# Okay, our SeekerProfile *starts* January 2018, so we are looking for 5 dates to see if
+# there is an increase in profiles being made
+# 2/16/2018, 3/9/2018, 4/2/2018, 6/1/2018, 8/10/2018
+
+
+NarrowSeekerProfile$created_at <- as.POSIXct(NarrowSeekerProfile$created_at, format = "%Y-%m-%d %H:%M:%S")
+
+NarrowSeekerProfile$Time <- format(as.POSIXct(NarrowSeekerProfile$created_at, format =  "%Y-%m-%d %H:%M:%S"), format = "%H:%M:%S")
+
+NarrowSeekerProfile$created_at <- ymd_hms(NarrowSeekerProfile$created_at)
+
+NarrowSeekerProfile$day <- factor(day(NarrowSeekerProfile$created_at))
+NarrowSeekerProfile$month <- factor(month(NarrowSeekerProfile$created_at, label = TRUE))
+
+# February 2/16/2018, highest day profiles created!
+
+February <- NarrowSeekerProfile %>% filter(month == "Feb")
+
+February <- February %>%
+  group_by(day) %>%
+  dplyr::summarize(Total = n())
+
+ggplot(February, aes(day, Total, fill = day)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Days of February, Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+
+# March 3/9/2018, highest day profiles created!
+
+March <- NarrowSeekerProfile %>% filter(month == "Mar")
+
+March <- March %>%
+  group_by(day) %>%
+  dplyr::summarize(Total = n())
+
+ggplot(March, aes(day, Total, fill = day)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Days of March, Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+# April 4/2/2018, NOT the highest day profiles created
+
+April <- NarrowSeekerProfile %>% filter(month == "Apr")
+
+April <- April %>%
+  group_by(day) %>%
+  dplyr::summarize(Total = n())
+
+ggplot(April, aes(day, Total, fill = day)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Days of April, Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+# June 6/1/2018, NOT the highest day profiles created
+
+June <- NarrowSeekerProfile %>% filter(month == "Jun")
+
+June <- June %>%
+  group_by(day) %>%
+  dplyr::summarize(Total = n())
+
+ggplot(June, aes(day, Total, fill = day)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Days of June, Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+
+# August 8/10/2018, NOT the highest day profiles created
+
+August <- NarrowSeekerProfile %>% filter(month == "Aug")
+
+August <- August %>%
+  group_by(day) %>%
+  dplyr::summarize(Total = n())
+
+ggplot(August, aes(day, Total, fill = day)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Days of August, Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+
+# So it does seem that email campaigns *do* affect the job seekers making
+# profiles for the job board!
+
+#
+```
+ 
+Q: Is there a relationship between certain days of the week, times in the day, or months, or time of year and when employers and job seekers create accounts?
+
+```{r}
+# # this one should be easy with parse date, 778 employers, 4342 seekers
+
+#set up time
+# strptime(EmployerProfile$created_at, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+# EmployerProfile <- EmployerProfile %>% mutate(created_at = ymd_hms(created_at, tz = "UTC"))
+# strptime(SeekerProfile$created_at, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+# SeekerProfile <- SeekerProfile %>% mutate(created_at = ymd_hms(created_at, tz = "UTC"))
+
+
+### TEST
+
+EmployerProfile$created_at <- as.POSIXct(EmployerProfile$created_at, format = "%Y-%m-%d %H:%M:%S")
+
+EmployerProfile$Time <- format(as.POSIXct(EmployerProfile$created_at, format = "%Y-%m-%d %H:%M:%S"), format = "%H:%M:%S")
+
+EmployerProfile$created_at <- ymd_hms(EmployerProfile$created_at)
+
+EmployerProfile$day <- factor(day(EmployerProfile$created_at))
+EmployerProfile$month <- factor(month(EmployerProfile$created_at, label = TRUE))
+EmployerProfile$year <- factor(year(EmployerProfile$created_at))
+EmployerProfile$dayofweek <- factor(wday(EmployerProfile$created_at, label = TRUE))
+
+EmployerProfile$hour <- factor(hour(hms(EmployerProfile$Time)))
+EmployerProfile$minute <- factor(minute(hms(EmployerProfile$Time)))
+EmployerProfile$second <- factor(second(hms(EmployerProfile$Time)))
+
+## I AM DUMB I DID THIS LAST YEAR AND FORGOT x_X I LITERARLLY DID THIS LAST YEAR WITH UBER SHEESH
+
+
+SeekerProfile$created_at <- as.POSIXct(SeekerProfile$created_at, format = "%Y-%m-%d %H:%M:%S")
+
+SeekerProfile$Time <- format(as.POSIXct(SeekerProfile$created_at, format = "%Y-%m-%d %H:%M:%S"), format = "%H:%M:%S")
+
+SeekerProfile$created_at <- ymd_hms(SeekerProfile$created_at)
+
+SeekerProfile$day <- factor(day(SeekerProfile$created_at))
+SeekerProfile$month <- factor(month(SeekerProfile$created_at, label = TRUE))
+SeekerProfile$year <- factor(year(SeekerProfile$created_at))
+SeekerProfile$dayofweek <- factor(wday(SeekerProfile$created_at, label = TRUE))
+
+SeekerProfile$hour <- factor(hour(hms(SeekerProfile$Time)))
+SeekerProfile$minute <- factor(minute(hms(SeekerProfile$Time)))
+SeekerProfile$second <- factor(second(hms(SeekerProfile$Time)))
+
+## Month
+
+SeekerMonth <- SeekerProfile %>%
+  group_by(month) %>%
+  dplyr::summarize(Total = n())
+EmployerMonth <- EmployerProfile %>%
+  group_by(month) %>%
+  dplyr::summarize(Total = n())
+
+
+par(mfrow = c(1,2))
+
+ggplot(SeekerMonth, aes(month, Total, fill = month)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Month of the Year Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+ggplot(EmployerMonth, aes(month, Total, fill = month)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Month of the Year Employer Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+## Day of the Week
+
+SeekerDay <- SeekerProfile %>%
+  group_by(dayofweek) %>%
+  dplyr::summarize(Total = n())
+EmployerDay <- EmployerProfile %>%
+  group_by(dayofweek) %>%
+  dplyr::summarize(Total = n())
+
+
+par(mfrow = c(1,2))
+
+ggplot(SeekerDay, aes(dayofweek, Total, fill = dayofweek)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Day of the Week Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+ggplot(EmployerDay, aes(dayofweek, Total, fill = dayofweek)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Day of the Week Employer Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+## Hour of Day
+
+SeekerHour <- SeekerProfile %>%
+  group_by(hour) %>%
+  dplyr::summarize(Total = n())
+EmployerHour <- EmployerProfile %>%
+  group_by(hour) %>%
+  dplyr::summarize(Total = n())
+
+
+par(mfrow = c(1,2))
+
+ggplot(SeekerHour, aes(hour, Total, fill = hour)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Hour of Day Job Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+ggplot(EmployerHour, aes(hour, Total, fill = hour)) + 
+  geom_bar( stat = "identity") +
+  ggtitle("Hour of Day Employer Profiles Created") +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = comma)
+
+# So conclusions are this: Both employers and seekers created in January first and August second most. Regarding days of week, employers primarily created on weekdays, Monday through Thursday, and seekers were a perfect parabola with Wednesday being the day of the week profiles were created the most. Finally when it came to hours it was surprising they mimicked each other. Employers created profiles in the afternoon/evening from 1PM-9PM being the primary hours. Seekers were similar but more spread out. They primarily created profiles from 3PM-12AM.
+```
+

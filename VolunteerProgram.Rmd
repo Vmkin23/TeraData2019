@@ -1,0 +1,455 @@
+---
+title: "Volunteer Program"
+author: "Victoria Kincaid"
+date: "3/21/2022"
+output: html_document
+---
+
+Context: For program evaluation, our Volunteer Program usually queries reports as follows: "Working with a volunteer" is defined as 
+•	Mentoring request closed as Completed as compared to clients who have no volunteer program (Mentoring) requests
+•	Request Record Type = Volunteer Program Request
+•	Request Reason = Mentoring
+•	Request Status = Completed
+•	Post-Hire Request? = True 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(parsedate)
+library(gridExtra)
+library(knitr)
+library(DT)
+library(scales)
+
+EmployerProfile <- readxl::read_xlsx("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/EPO_Teradata_Employer_Profile_Creation_Report.xlsx")
+SeekerProfile <- readxl::read_xlsx("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/EPO_Teradata_Job Seeker_Profile_Creation_Report.xlsx")
+JobBoardSales <- readxl::read_xlsx("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/EPO_Teradata_Job_Board_Sales_Report.xlsx")
+
+Feedback <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/Feedback__c.csv")
+Campaign <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/Campaign.csv")
+EmailHistoryContact <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/vr__VR_Email_History_Contact__c.csv")
+
+SF2018Activities <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_2018Activities.csv")
+SFAcct <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Account.csv")
+SFCase <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Case.csv")
+SFContact <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SF_Contact.csv")
+SFHI <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Hire_Information__c.csv")
+SFOpportunity <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_Opportunity.csv")
+SFRecordType <- read.csv("D:/School Schtuff/Current Semester/Spring 2022/BAS 270/Data/SalesForce_RecordType.csv")
+```
+
+Q:  What can we prove - quantitatively - that our volunteers are increasing the overall effectiveness of our program?    
+
+```{r}
+# Okay in this question, we want to show that participants who have done a volunteer activity like mock interview have higher hire rates. 
+# We want to look at SFCase, SFContact df_cases$AccountId %in% df_accounts$Id, df_cases$ContactId %in% df_contact$Id
+
+## to help
+# summary(as.factor(SFContact$MyTrak_1_on_1_Career_Coaching_Request__c))
+# which( colnames(SFContact) == "Active_Color" )
+# grep("Trak", colnames(SFHI)) 
+# x <- SFContact[,c(58,129,139,174,249,250,257,258,311,343,377)]
+# 
+# #
+NarrowCase <- SFCase[,c(4,9,11,12,46)]
+NarrowContact <- SFContact[,c(1,57,200,206,208,32,99,281,318,322,324,368)]
+NarrowHire <- SFHI[,c(13,10,20)]
+
+Case_Contact_Join <- left_join(NarrowContact, NarrowCase, by = c("Id" = "ContactId"))
+
+Case_Contact_Join <- Case_Contact_Join %>% 
+    mutate_all(~ifelse(. %in% c("N/A", "null", ""), NA, .)) %>% 
+    na.omit()
+
+Volunteers <- left_join(Case_Contact_Join, NarrowHire, by = c("Id" = "Client_Name__c"))
+
+Volunteers$ConfirmedHire <- ifelse( Volunteers$Active_Color__c != "Blue", "0", "1")
+# SuccessfulVolunteers <- Volunteers %>% filter(Active_Color__c == "Blue") Now you don't need this
+
+Volunteers$Active_Color__c = as.factor(Volunteers$Active_Color__c)
+Volunteers$Used_Volunteer_Services__c = as.factor(Volunteers$Used_Volunteer_Services__c)
+#VModel <- glm(Active_Color__c ~ Used_Volunteer_Services__c, data = Volunteers, family = "binomial")
+
+VModel <- lm(ConfirmedHire ~ 0 + Used_Volunteer_Services__c, data = Volunteers)
+summary(VModel)
+
+# EducationHire <- lm(ConfirmedHire ~ 0 + Highest_Level_of_Education_Completed__c, data = NarrowContact)
+
+# SuccessfulVolunteers$Active_Color__c = as.factor(SuccessfulVolunteers$Active_Color__c)
+# SuccessfulVolunteers$Used_Volunteer_Services__c = as.factor(SuccessfulVolunteers$Used_Volunteer_Services__c)
+# SVModel <- glm(Active_Color__c ~ Used_Volunteer_Services__c, data = SuccessfulVolunteers, family = "binomial")
+# summary(SVModel)
+
+# Looking at our two models we can see that clients who utilized our volunteer services had a higher estimate of being hired.
+```
+
+Q: Does working with a volunteer raise the probability of a client getting hired or getting hire sooner? 
+
+```{r}
+# The answer is yes. Use previous answer to show that for color blue in successful and how many were hired
+
+
+# Previously I ran two models, the first one was for potential volunteers and the second one was for clients that were hired (their color was blue) and their confirmed hired date. For volunteers my intercept was 0.3338 and for successful volunteers and my intercept was 2.543e-13. Since this is a logistic regression and not linear it's a little different. The goodness of fit for the model is better for a lower coefficient. But in my previous problem that was just the two variables and I want a multiple logistic regression, so I am going to do all columns for the two variable tables.
+#####################################
+Volunteers$MyTrak_Federal_Resume_Review__c = as.factor(Volunteers$MyTrak_Federal_Resume_Review__c)
+Volunteers$MyTrak_1_on_1_Career_Coaching_Request__c = as.factor(Volunteers$MyTrak_1_on_1_Career_Coaching_Request__c)
+Volunteers$MyTrak_Mock_Interview_Request__c = as.factor(Volunteers$MyTrak_Mock_Interview_Request__c)
+Volunteers$Used_Volunteer_Services__c = as.factor(Volunteers$Used_Volunteer_Services__c)
+Volunteers$Request_Volunteer_Assistance__c = as.factor(Volunteers$Request_Volunteer_Assistance__c)
+
+
+# SuccessfulVolunteers$MyTrak_Federal_Resume_Review__c = as.factor(SuccessfulVolunteers$MyTrak_Federal_Resume_Review__c)
+# SuccessfulVolunteers$MyTrak_1_on_1_Career_Coaching_Request__c = as.factor(SuccessfulVolunteers$MyTrak_1_on_1_Career_Coaching_Request__c)
+# SuccessfulVolunteers$MyTrak_Mock_Interview_Request__c = as.factor(SuccessfulVolunteers$MyTrak_Mock_Interview_Request__c)
+# SuccessfulVolunteers$Used_Volunteer_Services__c = as.factor(SuccessfulVolunteers$Used_Volunteer_Services__c)
+# SuccessfulVolunteers$Request_Volunteer_Assistance__c = as.factor(SuccessfulVolunteers$Request_Volunteer_Assistance__c)
+
+
+
+MocKInterviewVolunteer <- lm(ConfirmedHire ~ 0 +  MyTrak_Mock_Interview_Request__c, data = Volunteers)
+CareerCoachVolunteer <- lm(ConfirmedHire ~ 0 +  MyTrak_1_on_1_Career_Coaching_Request__c, data = Volunteers)
+ResumeReviewVolunteer <- lm(ConfirmedHire ~ 0 +  MyTrak_Federal_Resume_Review__c, data = Volunteers)
+
+summary(MocKInterviewVolunteer)
+summary(CareerCoachVolunteer)
+summary(ResumeReviewVolunteer)
+
+# SVModel <- glm(Active_Color__c ~ Used_Volunteer_Services__c + MyTrak_Mock_Interview_Request__c + MyTrak_1_on_1_Career_Coaching_Request__c + MyTrak_Federal_Resume_Review__c + Used_Volunteer_Services__c + Request_Volunteer_Assistance__c, data = SuccessfulVolunteers, family = "binomial")
+# summary(SVModel)
+
+# Looking at the two models, the successful model returns much smaller numbers also of note is the warning "glm.fit: algorithm did not converge". "We receive this message because the predictor variable x is able to perfectly separate the response variable y into 0’s and 1’s." (statology). This makes sense to me due to the active_color only being "Blue" for the successful volunteers.
+```
+
+Q: Are there certain Mentoring activities that are more effective than others (based on Requested Support field)? 
+
+```{r}
+# From previous answer we can narrow down which service has the most success rate, filter volunteers with different 1's for each response, should show that mock interview is the best of the three
+
+Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Blue"] <- "Confirmed Hire"
+Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Green"] <- "Actively Searching Employment"
+Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Grey"] <- "Out After Assessment"
+Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Purple"] <- "Active Duty/School"
+
+CareerCounseling <- Volunteers %>% filter(MyTrak_1_on_1_Career_Coaching_Request__c == "1")
+MockInterview <- Volunteers %>% filter(MyTrak_Mock_Interview_Request__c == "1")
+FederalResume <- Volunteers %>% filter(MyTrak_Federal_Resume_Review__c == "1")
+
+CCGraph <- CareerCounseling %>%
+  group_by(Active_Color__c) %>% 
+  summarise( percent = 100 * n() / nrow(CareerCounseling))
+# 45.24% Confirmed hire
+
+MIGraph <- MockInterview %>%
+  group_by(Active_Color__c) %>% 
+  summarise( percent = 100 * n() / nrow(MockInterview))
+# 52.83% Confirmed Hire
+
+
+MIGraph <- MIGraph %>% filter(Active_Color__c != "Red")
+
+FRGraph<- FederalResume %>%
+  group_by(Active_Color__c) %>% 
+  summarise( percent = 100 * n() / nrow(FederalResume))
+# 47.78% Confirmed Hire
+
+#Perhaps we can put this into a pie chart? But Mock Interview gets about 5% more confirmed hires than the other variables
+
+CareerCounseling <- CareerCounseling %>% 
+  group_by(Active_Color__c) %>% # Variable to be transformed
+  count() %>% 
+  ungroup() %>% 
+  mutate(perc = `n` / sum(`n`)) %>% 
+  arrange(perc) %>%
+  mutate(labels = scales::percent(perc))
+
+
+ggplot(CareerCounseling, aes(x = "", y = perc, fill = Active_Color__c)) +
+  geom_col() +
+  geom_text(aes(label = labels),
+            position = position_stack(vjust = 0.5)) +
+  coord_polar(theta = "y")
+
+
+# create a dataset
+specie <- c(rep("sorgho" , 3) , rep("poacee" , 3) , rep("banana" , 3) , rep("triticum" , 3) )
+condition <- rep(c("normal" , "stress" , "Nitrogen") , 4)
+value <- abs(rnorm(12 , 0 , 15))
+data <- data.frame(specie,condition,value)
+ 
+# Grouped
+ggplot(data, aes(fill=condition, y=value, x=specie)) + 
+    geom_bar(position="dodge", stat="identity")
+
+
+
+ggplot(data = FRGraph) + 
+  geom_bar(mapping = aes(x = Active_Color__c, y = percent, fill = Active_Color__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Federal Resume Review") + 
+  labs(x = "Active Color", y = "%") +
+  scale_y_continuous(limits = c(0,60))
+
+ggplot(data = MIGraph) + 
+  geom_bar(mapping = aes(x = Active_Color__c, y = percent, fill = Active_Color__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Mock Interview") + 
+  labs(x = "Active Color", y = "%") +
+  scale_y_continuous(limits = c(0,60))
+
+ggplot(data = CCGraph) + 
+  geom_bar(mapping = aes(x = Active_Color__c, y = percent, fill = Active_Color__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Career Counseling") + 
+  labs(x = "Active Color", y = "%") +
+  scale_y_continuous(limits = c(0,60))
+#I dunno look at past work, this doesn't look right for a pie chart, although it does show
+## Okay this looks *okay* But I think what I really want is a clusterd bar chart so I am going to do that instead of multiple
+## charts, I think I am going to work back from Volunteers and just make a column that says what group it is
+
+# Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Blue"] <- "Confirmed Hire"
+# Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Green"] <- "Actively Searching Employment"
+# Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Grey"] <- "Out After Assessment"
+# Volunteers$Active_Color__c[Volunteers$Active_Color__c %in% "Purple"] <- "Active Duty/School"
+
+
+# Volunteers["Status"] <- NA
+# 
+# for (i in 1:nrow(Volunteers)){
+#   if (Volunteers[i,"Active_Color__c"] == "Purple") {
+#     Volunteers[i,"Status"] <- "Active Duty/School"
+#   }
+#   else if (Volunteers[i,"Active_Color__c"] == "Grey") {
+#     Volunteers[i,"Status"] <- "Out After Assessment"
+#   }
+#   else if (Volunteers[i,"Active_Color__c"] == "Blue") {
+#     Volunteers[i,"Status"] <- "Confirmed Hire"
+#   }
+#   else if (Volunteers[i,"Active_Color__c"] == "Green") {
+#     Volunteers[i,"Status"] <- "Actively Searching Employment"
+#   }
+#   else {
+#     Volunteers[i,"Status"] <- NA
+#   }
+# }
+
+# Volunteers <- Volunteers %>% filter(MyTrak_Federal_Resume_Review__c == 1 | MyTrak_Mock_Interview_Request__c == 1 | MyTrak_1_on_1_Career_Coaching_Request__c == 1)
+# 
+# VolunteerGraph <- Volunteers %>%
+#   group_by(Status,MyTrak_1_on_1_Career_Coaching_Request__c,MyTrak_Federal_Resume_Review__c,MyTrak_Mock_Interview_Request__c) %>% 
+#   summarise( percent = 100 * n() / nrow(Volunteers))
+# 
+# ggplot(VolunteerGraph, aes(fill=MyTrak_Federal_Resume_Review__c, y=percent, x=Status)) + 
+#     geom_bar(position="dodge", stat="identity")
+
+
+## Eh, I'm kinda stuck here at what I was doing, gonna stick with bar columns, maybe look into making it a pie chart? Clustered bar column is tricky because a lot of people did more than one volunteer service
+
+```
+  
+Q: Do volunteer activities increase the quality of job obtained - like the salary level? 
+
+```{r}
+# Combine with SFHI for their salary range? See if overall volunteers show a higher salary than non-volunteers? The only problem with this is that all of them have listed "Yes" under "Current_Volunteer__c" and my "Volunteer__c" column has less than 100 "1's" whereas in the SFcontacts it's around 2,000 
+
+Contact_Hire_Join <- left_join(NarrowContact, NarrowHire, by = c("Id" = "Client_Name__c"))
+
+NarrowCHJ <- Contact_Hire_Join %>% filter(Active_Color__c == "Blue")
+
+NotVolunteerHire <- NarrowCHJ %>% filter(Volunteer__c == "0")
+NotVolunteerHire <- NotVolunteerHire %>% filter(Salary_Range__c != "")
+VolunteerHire <- NarrowCHJ %>% filter(Volunteer__c == "1")
+VolunteerHire <- VolunteerHire %>% filter(Salary_Range__c != "")
+
+NVHGraph <- NotVolunteerHire %>%
+  group_by(Salary_Range__c) %>% 
+  dplyr::summarize(percent = 100 * n() / nrow(NotVolunteerHire))
+
+# 43.68% making above 50k
+
+VHGraph <- VolunteerHire %>%
+  group_by(Salary_Range__c) %>% 
+   dplyr::summarize(percent = 100 * n() / nrow(VolunteerHire))
+
+# 63.06% making above 50k
+
+# still gotta clean this up let's change the column names
+
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$20,000 - $29,999"] <- "20-29k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$30,000 - $39,999"] <- "30-39k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$40,000 - $49,999"] <- "40-49k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$50,000 - $59,999"] <- "50-59k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$60,000 - $69,999"] <- "60-69k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$70,000 - $79,999"] <- "70-79k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$80,000 - $89,999"] <- "80-89k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$90,000 - $99,999"] <- "90-99k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "Less than $20,000"] <- "< 20k"
+VHGraph$Salary_Range__c[VHGraph$Salary_Range__c %in% "$100,000+"] <- "99k +"
+
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "Less than $20,000"] <- "< 20k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$20,000 - $29,999"] <- "20-29k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$30,000 - $39,999"] <- "30-39k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$40,000 - $49,999"] <- "40-49k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$50,000 - $59,999"] <- "50-59k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$60,000 - $69,999"] <- "60-69k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$70,000 - $79,999"] <- "70-79k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$80,000 - $89,999"] <- "80-89k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$90,000 - $99,999"] <- "90-99k"
+NVHGraph$Salary_Range__c[NVHGraph$Salary_Range__c %in% "$100,000+"] <- "99k +"
+
+VHGraph <- VHGraph[c(2:9,1),]
+NVHGraph <- NVHGraph[c(10,2:9,1),]
+
+ggplot(data = NVHGraph) + 
+  geom_bar(mapping = aes(x = Salary_Range__c, y = percent, fill = Salary_Range__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Not Volunteers") + 
+  labs(x = "Salary Range", y = "% of group")
+
+ggplot(data = VHGraph) + 
+  geom_bar(mapping = aes(x = Salary_Range__c, y = percent, fill = Salary_Range__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Volunteers") + 
+  labs(x = "Salary Range", y = "% of group")
+
+# So yes, clients who volunteer on average attain a higher salary than those peers who do not volunteer.
+```
+
+Q: Do post-hire requests have any different results related to the above questions?
+
+```{r}
+# I need to find where post-hire requests are. I see it listed at the top but I can't find it.
+# Under SFHI We have the column Hired but still active and looking, we are going to filter the same questions through that because I don't see anything saying "Post-Hire" with a True/False answer
+NarrowPostHire <- SFHI[,c(13,10,20,28)]
+
+PostVolunteers <- left_join(Case_Contact_Join, NarrowPostHire, by = c("Id" = "Client_Name__c"))
+PostVolunteers <- PostVolunteers %>% filter(Hired_but_still_active_and_looking__c == "1")
+# aaand just like that we go down from 13069 to 1166
+PSV <- PostVolunteers %>% filter(Active_Color__c == "Blue")
+
+# PostVolunteers$Active_Color__c = as.factor(PostVolunteers$Active_Color__c)
+# PostVolunteers$MyTrak_Federal_Resume_Review__c = as.factor(PostVolunteers$MyTrak_Federal_Resume_Review__c)
+# PostVolunteers$MyTrak_1_on_1_Career_Coaching_Request__c = as.factor(PostVolunteers$MyTrak_1_on_1_Career_Coaching_Request__c)
+# PostVolunteers$MyTrak_Mock_Interview_Request__c = as.factor(PostVolunteers$MyTrak_Mock_Interview_Request__c)
+# PostVolunteers$Used_Volunteer_Services__c = as.factor(PostVolunteers$Used_Volunteer_Services__c)
+# PostVolunteers$Request_Volunteer_Assistance__c = as.factor(PostVolunteers$Request_Volunteer_Assistance__c)
+# 
+# NarrowPostVolunteers <- PostVolunteers[,c(2:5,12,16)]
+# 
+# NPVModel <- glm(Active_Color__c ~ MyTrak_Mock_Interview_Request__c + MyTrak_1_on_1_Career_Coaching_Request__c + MyTrak_Federal_Resume_Review__c + Used_Volunteer_Services__c + Request_Volunteer_Assistance__c, data = NarrowPostVolunteers, family = "binomial")
+# summary(NPVModel)
+# #  I *think* the only above questions that need to be answered for post hire are salary and mentoring services so I'll stop trying with this one
+
+PostCareerCounseling <- PostVolunteers %>% filter(MyTrak_1_on_1_Career_Coaching_Request__c == "1")
+PostMockInterview <- PostVolunteers %>% filter(MyTrak_Mock_Interview_Request__c == "1")
+PostFederalResume <- PostVolunteers %>% filter(MyTrak_Federal_Resume_Review__c == "1")
+
+PostVolunteers %>%
+  group_by(MyTrak_Federal_Resume_Review__c) %>%
+  dplyr::summarise( percent = 100 * n() / nrow(PostVolunteers))
+PostVolunteers %>%
+  group_by(MyTrak_Mock_Interview_Request__c) %>%
+  dplyr::summarise( percent = 100 * n() / nrow(PostVolunteers))
+PostVolunteers %>%
+  group_by(MyTrak_1_on_1_Career_Coaching_Request__c) %>%
+  dplyr::summarise( percent = 100 * n() / nrow(PostVolunteers))
+
+
+
+PostCareerCounseling %>%
+  group_by(Active_Color__c) %>% 
+  summarise( percent = 100 * n() / nrow(PostCareerCounseling))
+# 100% Confirmed hire
+
+PostMockInterview %>%
+  group_by(Active_Color__c) %>% 
+  summarise( percent = 100 * n() / nrow(PostMockInterview))
+# 100% Confirmed Hire
+
+PostFederalResume %>%
+  group_by(Active_Color__c) %>% 
+  summarise( percent = 100 * n() / nrow(PostFederalResume))
+# 92.59% Confirmed Hire
+
+###################################################################   
+### Hmm.....they're already blue, so the 100% isn't really affecting anything number wise, can't hurt to show
+Post_Contact_Hire_Join <- left_join(NarrowContact, NarrowPostHire, by = c("Id" = "Client_Name__c"))
+
+NarrowCHJPOST <- Post_Contact_Hire_Join %>% filter(Hired_but_still_active_and_looking__c == "1")
+
+PostNotVolunteerHire <- NarrowCHJ %>% filter(Volunteer__c == "0")
+PostVolunteerHire <- NarrowCHJ %>% filter(Volunteer__c == "1")
+
+
+PostNVHGraph <- PostNotVolunteerHire %>%
+  group_by(Salary_Range__c) %>% 
+  dplyr::summarize( percent = 100 * n() / nrow(PostNotVolunteerHire))
+
+# 19.55% making above 50k
+
+PostVHGraph <- PostVolunteerHire %>%
+  group_by(Salary_Range__c) %>% 
+  dplyr::summarize( percent = 100 * n() / nrow(PostVolunteerHire))
+
+# 33.33% making above 50k
+
+PostNVHGraph <- PostNVHGraph %>% filter(Salary_Range__c != "")
+PostVHGraph <- PostVHGraph %>% filter(Salary_Range__c != "")
+
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$20,000 - $29,999"] <- "20-29k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$30,000 - $39,999"] <- "30-39k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$40,000 - $49,999"] <- "40-49k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$50,000 - $59,999"] <- "50-59k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$60,000 - $69,999"] <- "60-69k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$70,000 - $79,999"] <- "70-79k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$80,000 - $89,999"] <- "80-89k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$90,000 - $99,999"] <- "90-99k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "Less than $20,000"] <- "< 20k"
+PostVHGraph$Salary_Range__c[PostVHGraph$Salary_Range__c %in% "$100,000+"] <- "99k +"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "Less than $20,000"] <- "< 20k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$20,000 - $29,999"] <- "20-29k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$30,000 - $39,999"] <- "30-39k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$40,000 - $49,999"] <- "40-49k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$50,000 - $59,999"] <- "50-59k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$60,000 - $69,999"] <- "60-69k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$70,000 - $79,999"] <- "70-79k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$80,000 - $89,999"] <- "80-89k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$90,000 - $99,999"] <- "90-99k"
+PostNVHGraph$Salary_Range__c[PostNVHGraph$Salary_Range__c %in% "$100,000+"] <- "99k +"
+
+PostVHGraph <- PostVHGraph[c(2:9,1),]
+PostNVHGraph <- PostNVHGraph[c(10,2:9,1),]
+
+ggplot(data = PostNVHGraph) + 
+  geom_bar(mapping = aes(x = Salary_Range__c, y = percent, fill = Salary_Range__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Not Volunteers : Post Hire") + 
+  labs(x = "Salary Range", y = "% of group")
+
+ggplot(data = PostVHGraph) + 
+  geom_bar(mapping = aes(x = Salary_Range__c, y = percent, fill = Salary_Range__c), stat = "summary", fun = "mean", show.legend = F) +
+  ggtitle("Volunteers : Post Hire") + 
+  labs(x = "Salary Range", y = "% of group")
+
+#
+```
+
+Q: Do multiple hires have a higher degree of participation in volunteer mentoring?
+ 
+```{r}
+# SFContact$Multiple_HHUSA_Hire__c is 324
+
+Contact_Hire_Join <- left_join(NarrowContact, NarrowHire, by = c("Id" = "Client_Name__c"))
+
+MultipleHires <- Contact_Hire_Join %>% filter(Multiple_HHUSA_Hire__c == "1")
+
+
+Contact_Hire_Join %>%
+  group_by(Volunteer__c) %>% 
+  summarise( percent = 100 * n() / nrow(Contact_Hire_Join))
+# 98% not volunteers, 2% volunteers, out of 12,879 clients
+
+MultipleHires %>%
+  group_by(Volunteer__c) %>% 
+  summarise( percent = 100 * n() / nrow(MultipleHires))
+# 99% not volunteers, 1% volunteers, out of 800 clients
+
+#
+```
